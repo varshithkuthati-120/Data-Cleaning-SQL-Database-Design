@@ -1,0 +1,219 @@
+# Mutual Fund Database Data Dictionary
+
+This document serves as the data dictionary for the SQLite database `mutual_fund.db` generated on Day 2 of the project. It describes all tables, columns, data types, constraints, and business definitions, along with their primary data sources.
+
+---
+
+## Star Schema Overview
+
+The database is designed using a star schema optimized for analytical query performance:
+*   **Dimensions**: `dim_fund`, `dim_date`
+*   **Core Facts**: `fact_nav`, `fact_transactions`, `fact_performance`, `fact_aum`
+*   **Supplementary Tables**: `fact_portfolio_holdings`, `fact_benchmark_indices`, `fact_monthly_sip_inflows`, `fact_category_inflows`, `fact_folio_count`
+
+---
+
+## 1. Dimension Tables
+
+### `dim_fund`
+*   **Description**: Contains descriptive master records for each mutual fund scheme.
+*   **Primary Source**: `01_fund_master.csv`
+*   **Primary Key**: `amfi_code`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `amfi_code` | INTEGER | PRIMARY KEY | Unique 6-digit scheme code assigned by Association of Mutual Funds in India (AMFI). |
+| `fund_house` | TEXT | NOT NULL | The Asset Management Company (AMC) managing the fund (e.g., SBI Mutual Fund). |
+| `scheme_name` | TEXT | NOT NULL | Full name of the mutual fund scheme (including plan and option details). |
+| `category` | TEXT | NOT NULL | Broad asset class category (e.g., Equity, Debt, Hybrid). |
+| `sub_category` | TEXT | NOT NULL | Specific investment style or asset class segment (e.g., Large Cap, Liquid, Flexi Cap). |
+| `plan` | TEXT | NOT NULL | Fund type based on distribution channels (Direct Plan vs. Regular Plan). |
+| `launch_date` | TEXT | | The date on which the scheme was launched (Format: YYYY-MM-DD). |
+| `benchmark` | TEXT | | The standard market index against which the fund's performance is measured. |
+| `expense_ratio_pct` | REAL | | Annual management fees and operating expenses of the scheme, represented as a percentage. |
+| `exit_load_pct` | REAL | | Fee charged to investors when they redeem units before a specified period, as a percentage. |
+| `min_sip_amount` | INTEGER | | Minimum amount required to start a Systematic Investment Plan (SIP) in INR. |
+| `min_lumpsum_amount` | INTEGER | | Minimum amount required for a one-time lumpsum purchase in INR. |
+| `fund_manager` | TEXT | | Name of the primary professional portfolio manager managing the fund. |
+| `risk_category` | TEXT | | Standard risk grade based on SEBI riskometer (e.g., Low, Moderate, Very High). |
+| `sebi_category_code` | TEXT | | Code assigned by SEBI denoting the category classification for the fund. |
+
+---
+
+### `dim_date`
+*   **Description**: Conformed calendar dimension covering all dates in the datasets from `2022-01-01` to `2026-12-31`.
+*   **Primary Source**: Generated dynamically during ingestion to enforce referential integrity.
+*   **Primary Key**: `date`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `date` | TEXT | PRIMARY KEY | Unique calendar date in ISO-8601 string format (`YYYY-MM-DD`). |
+| `year` | INTEGER | NOT NULL | Year component of the date (e.g., 2024). |
+| `month` | INTEGER | NOT NULL | Month number of the date (1 to 12). |
+| `day` | INTEGER | NOT NULL | Day of the month (1 to 31). |
+| `quarter` | INTEGER | NOT NULL | Calendar quarter of the year (1 to 4). |
+| `month_name` | TEXT | NOT NULL | Full name of the calendar month (e.g., January). |
+| `day_name` | TEXT | NOT NULL | Name of the day of the week (e.g., Monday). |
+| `is_weekend` | INTEGER | NOT NULL | Binary flag indicating if the date falls on a weekend: `1` = Weekend, `0` = Weekday. |
+| `day_of_week` | INTEGER | NOT NULL | Day of week index (0 = Monday to 6 = Sunday). |
+
+---
+
+## 2. Core Fact Tables
+
+### `fact_nav`
+*   **Description**: Daily Net Asset Value (NAV) records for all mutual fund schemes. Missing NAV values on weekends/holidays have been forward-filled.
+*   **Primary Source**: `02_nav_history.csv` (Cleaned & Resampled)
+*   **Primary Key**: Composite Key `(amfi_code, date)`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `amfi_code` | INTEGER | FOREIGN KEY REFERENCES `dim_fund(amfi_code)` | AMFI code of the scheme. |
+| `date` | TEXT | FOREIGN KEY REFERENCES `dim_date(date)` | Reference date for the NAV. |
+| `nav` | REAL | NOT NULL, > 0 | Net Asset Value (NAV) of the scheme per unit on the reference date. |
+
+---
+
+### `fact_transactions`
+*   **Description**: Transaction records capturing investor buy and sell activities.
+*   **Primary Source**: `08_investor_transactions.csv` (Cleaned)
+*   **Primary Key**: `transaction_id` (Autoincrement)
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `transaction_id` | INTEGER | PRIMARY KEY AUTOINCREMENT | Unique autogenerated surrogate identifier for each transaction. |
+| `investor_id` | TEXT | NOT NULL | Unique identifier of the investor initiating the transaction. |
+| `transaction_date` | TEXT | FOREIGN KEY REFERENCES `dim_date(date)` | Date the transaction was executed. |
+| `amfi_code` | INTEGER | FOREIGN KEY REFERENCES `dim_fund(amfi_code)` | AMFI code of the fund scheme transacted. |
+| `transaction_type` | TEXT | NOT NULL | Mode of transaction: `SIP`, `Lumpsum`, or `Redemption`. |
+| `amount_inr` | REAL | NOT NULL, > 0 | Total monetary value of the transaction in Indian Rupees (INR). |
+| `state` | TEXT | | Indian state of residence of the transacting investor. |
+| `city` | TEXT | | City of residence of the transacting investor. |
+| `city_tier` | TEXT | | Tier classification of the city (e.g., Tier 1, Tier 2, Tier 3). |
+| `age_group` | TEXT | | Age bracket of the investor (e.g., 18-25, 26-35, etc.). |
+| `gender` | TEXT | | Gender identity of the investor. |
+| `annual_income_lakh` | REAL | | Annual income of the investor in Lakhs (100,000s) of INR. |
+| `payment_mode` | TEXT | | Payment channel used (e.g., UPI, Net Banking, Cheque, Mandate). |
+| `kyc_status` | TEXT | NOT NULL | Know-Your-Customer (KYC) status of the investor: `Verified` or `Pending`. |
+
+---
+
+### `fact_performance`
+*   **Description**: Performance statistics, risk metrics, and ratings for each scheme.
+*   **Primary Source**: `07_scheme_performance.csv` (Cleaned)
+*   **Primary Key**: `amfi_code`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `amfi_code` | INTEGER | PRIMARY KEY, FOREIGN KEY REFERENCES `dim_fund` | AMFI code of the scheme. |
+| `scheme_name` | TEXT | | Full name of the scheme. |
+| `fund_house` | TEXT | | Asset Management Company managing the scheme. |
+| `category` | TEXT | | Investment asset class category. |
+| `plan` | TEXT | | Distribution channel type (Direct vs. Regular). |
+| `return_1yr_pct` | REAL | | Annualized compound returns over the last 1 year, as a percentage. |
+| `return_3yr_pct` | REAL | | Annualized compound returns over the last 3 years, as a percentage. |
+| `return_5yr_pct` | REAL | | Annualized compound returns over the last 5 years, as a percentage. |
+| `benchmark_3yr_pct` | REAL | | Annualized benchmark returns over the last 3 years, as a percentage. |
+| `alpha` | REAL | | Risk-adjusted excess return of the fund relative to the benchmark. |
+| `beta` | REAL | | Measure of the fund's volatility relative to the broader market index. |
+| `sharpe_ratio` | REAL | | Return per unit of total risk (standard deviation). High for low-volatility funds. |
+| `sortino_ratio` | REAL | | Return per unit of downside risk. High for low-volatility funds. |
+| `std_dev_ann_pct` | REAL | | Annualized standard deviation representing historical volatility, as a percentage. |
+| `max_drawdown_pct` | REAL | | Maximum peak-to-trough decline in NAV over the period, as a negative percentage. |
+| `aum_crore` | REAL | | Total Assets Under Management in crores of INR (10,000,000s) for the fund. |
+| `expense_ratio_pct` | REAL | | Fund operating expense ratio, as a percentage. |
+| `morningstar_rating` | INTEGER | | Morningstar rating scale from 1 (lowest) to 5 (highest). |
+| `risk_grade` | TEXT | | Quantitative risk assessment level (e.g., Low, Moderate, High). |
+
+---
+
+### `fact_aum`
+*   **Description**: Historical quarterly AUM (Assets Under Management) at the fund house level.
+*   **Primary Source**: `03_aum_by_fund_house.csv` (Cleaned)
+*   **Primary Key**: Composite Key `(date, fund_house)`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `date` | TEXT | FOREIGN KEY REFERENCES `dim_date(date)` | Quarterly snapshot date (Format: YYYY-MM-DD). |
+| `fund_house` | TEXT | NOT NULL | Asset Management Company (AMC) name. |
+| `aum_lakh_crore` | REAL | | AUM of the AMC in Lakh Crores of INR. |
+| `aum_crore` | REAL | | AUM of the AMC in Crores of INR. |
+| `num_schemes` | INTEGER | | Number of active schemes offered by the fund house. |
+
+---
+
+## 3. Supplementary Tables
+
+### `fact_portfolio_holdings`
+*   **Description**: Top underlying stock holdings for each fund scheme on a given reporting date.
+*   **Primary Source**: `09_portfolio_holdings.csv` (Cleaned)
+*   **Primary Key**: Composite Key `(amfi_code, stock_symbol, portfolio_date)`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `amfi_code` | INTEGER | FOREIGN KEY REFERENCES `dim_fund` | AMFI code of the holding scheme. |
+| `stock_symbol` | TEXT | NOT NULL | NSE/BSE trading symbol of the stock (e.g., HDFCBANK). |
+| `stock_name` | TEXT | NOT NULL | Legal name of the underlying corporation. |
+| `sector` | TEXT | NOT NULL | Industry sector classification of the stock (e.g., Banking, IT). |
+| `weight_pct` | REAL | NOT NULL | Percentage allocation of the stock in the fund's total portfolio. |
+| `market_value_cr` | REAL | NOT NULL | Market value of the holding in Crores of INR. |
+| `current_price_inr` | REAL | NOT NULL | Latest trading price of the stock in INR. |
+| `portfolio_date` | TEXT | FOREIGN KEY REFERENCES `dim_date` | Reporting date of the portfolio snapshot. |
+
+---
+
+### `fact_benchmark_indices`
+*   **Description**: Daily close value records for major benchmark indices.
+*   **Primary Source**: `10_benchmark_indices.csv` (Cleaned)
+*   **Primary Key**: Composite Key `(date, index_name)`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `date` | TEXT | FOREIGN KEY REFERENCES `dim_date` | Trading date (Format: YYYY-MM-DD). |
+| `index_name` | TEXT | NOT NULL | Unique index identifier (e.g., NIFTY50, BSE_SMALLCAP). |
+| `close_value` | REAL | NOT NULL | The final closing value of the index on that trading day. |
+
+---
+
+### `fact_monthly_sip_inflows`
+*   **Description**: Industry-wide monthly SIP transaction inflows and folio counts.
+*   **Primary Source**: `04_monthly_sip_inflows.csv` (Cleaned)
+*   **Primary Key**: `month` (formatted as YYYY-MM-01)
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `month` | TEXT | PRIMARY KEY, FOREIGN KEY REFERENCES `dim_date` | Inflow calendar month normalized to the first of the month (`YYYY-MM-01`). |
+| `sip_inflow_crore` | REAL | NOT NULL | Total SIP inflows across the industry in Crores of INR. |
+| `active_sip_accounts_crore` | REAL | NOT NULL | Total count of active SIP accounts in crores. |
+| `new_sip_accounts_lakh` | REAL | NOT NULL | Count of new SIP accounts registered during the month in lakhs. |
+| `sip_aum_lakh_crore` | REAL | NOT NULL | Cumulative AUM under SIP route in Lakh Crores of INR. |
+| `yoy_growth_pct` | REAL | | Year-over-Year growth of monthly inflows as a percentage. |
+
+---
+
+### `fact_category_inflows`
+*   **Description**: Monthly net inflows segmented by fund category (e.g., Large Cap, Mid Cap).
+*   **Primary Source**: `05_category_inflows.csv` (Cleaned)
+*   **Primary Key**: Composite Key `(month, category)`
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `month` | TEXT | FOREIGN KEY REFERENCES `dim_date` | Month normalized to the first of the month (`YYYY-MM-01`). |
+| `category` | TEXT | NOT NULL | The investment category (e.g., Small Cap, Debt, Flexi Cap). |
+| `net_inflow_crore` | REAL | NOT NULL | Net inflow (inflow minus outflow) in Crores of INR. Can be negative. |
+
+---
+
+### `fact_folio_count`
+*   **Description**: Folio counts across major asset classes over time at the industry level.
+*   **Primary Source**: `06_industry_folio_count.csv` (Cleaned)
+*   **Primary Key**: `month` (formatted as YYYY-MM-01)
+
+| Column Name | SQLite Data Type | Constraints / Keys | Business Definition |
+| :--- | :--- | :--- | :--- |
+| `month` | TEXT | PRIMARY KEY, FOREIGN KEY REFERENCES `dim_date` | Month normalized to the first of the month (`YYYY-MM-01`). |
+| `total_folios_crore` | REAL | NOT NULL | Total count of folios in the industry, in crores. |
+| `equity_folios_crore` | REAL | NOT NULL | Equity folios count in crores. |
+| `debt_folios_crore` | REAL | NOT NULL | Debt folios count in crores. |
+| `hybrid_folios_crore` | REAL | NOT NULL | Hybrid folios count in crores. |
+| `others_folios_crore` | REAL | NOT NULL | All other folio types count in crores. |

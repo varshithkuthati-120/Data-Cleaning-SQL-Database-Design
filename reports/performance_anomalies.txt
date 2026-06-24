@@ -1,0 +1,9 @@
+Mutual Fund Scheme Performance Anomalies Report
+===============================================
+
+- High Sharpe Ratio Anomaly: ICICI Pru Liquid Fund - Regular - Growth (AMFI: 120507) has Sharpe Ratio of 7.68.
+- High Sortino Ratio Anomaly: ICICI Pru Liquid Fund - Regular - Growth (AMFI: 120507) has Sortino Ratio of 10.37.
+- High Sharpe Ratio Anomaly: Kotak Liquid Fund - Regular - Growth (AMFI: 120844) has Sharpe Ratio of 6.18.
+- High Sortino Ratio Anomaly: Kotak Liquid Fund - Regular - Growth (AMFI: 120844) has Sortino Ratio of 9.7.
+- High Sharpe Ratio Anomaly: ABSL Liquid Fund - Regular - Growth (AMFI: 101208) has Sharpe Ratio of 5.14.
+- High Sortino Ratio Anomaly: ABSL Liquid Fund - Regular - Growth (AMFI: 101208) has Sortino Ratio of 8.76.
